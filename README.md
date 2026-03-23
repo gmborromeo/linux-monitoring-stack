@@ -4,6 +4,9 @@ A production-grade observability stack built on a Linux VM (Azure/WSL) using Doc
 
 **Stack:** Prometheus · Grafana · Alertmanager · Node Exporter · Docker Compose
 
+
+<img width="1934" height="1005" alt="image" src="https://github.com/user-attachments/assets/3e51eeba-0000-4883-a33c-fecc4c1e825c" />
+
 ---
 
 ## Architecture
@@ -25,9 +28,6 @@ A production-grade observability stack built on a Linux VM (Azure/WSL) using Doc
                                         │ webhook
                                    Slack channel
 ```
-
-<img width="1919" height="996" alt="image" src="https://github.com/user-attachments/assets/4aef4c0c-cdcd-4ba5-9f70-53192222c290" />
-
 
 ---
 
