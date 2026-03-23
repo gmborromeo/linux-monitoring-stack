@@ -26,6 +26,9 @@ A production-grade observability stack built on a Linux VM (Azure/WSL) using Doc
                                    Slack channel
 ```
 
+<img width="1919" height="996" alt="image" src="https://github.com/user-attachments/assets/4aef4c0c-cdcd-4ba5-9f70-53192222c290" />
+
+
 ---
 
 ## Features
