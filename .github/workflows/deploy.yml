@@ -1,0 +1,21 @@
+name: Deploy monitoring stack
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Substitute secrets into alertmanager config
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          envsubst < alertmanager/alertmanager.yml > alertmanager/alertmanager.resolved.yml
+          mv alertmanager/alertmanager.resolved.yml alertmanager/alertmanager.yml
+
+      - name: Deploy stack
+        run: docker compose up -d
