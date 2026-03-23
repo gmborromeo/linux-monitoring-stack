@@ -37,6 +37,8 @@ services:
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
     networks:
       - monitoring
+    environment:
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
 
   grafana:
     image: grafana/grafana:latest
