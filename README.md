@@ -1,30 +1,30 @@
 # Linux Server Monitoring Stack
 
-A production-grade observability stack built on a Linux VM (Azure/WSL) using Docker Compose. Collects system metrics, visualises them in Grafana, and fires Slack alerts when thresholds are breached.
+A production-grade observability stack built on a Linux VM (Azure/WSL) using Docker Compose. Collects system metrics, visualises them in Grafana, fires Slack alerts when thresholds are breached, and serves a live uptime status page via Nginx.
 
-**Stack:** Prometheus · Grafana · Alertmanager · Node Exporter · Docker Compose
-
-
-<img width="1934" height="1005" alt="image" src="https://github.com/user-attachments/assets/3e51eeba-0000-4883-a33c-fecc4c1e825c" />
+**Stack:** Prometheus · Grafana · Alertmanager · Node Exporter · Nginx · Docker Compose
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│               Linux VM / WSL                    │
-│  ┌───────────────────────────────────────────┐  │
-│  │           Docker Compose Network          │  │
-│  │                                           │  │
-│  │  Node Exporter ──scrape──► Prometheus     │  │
-│  │  (CPU/mem/disk)             │    │        │  │
-│  │                          query  fire      │  │
-│  │                             │    │        │  │
-│  │                          Grafana  Alertmgr│  │
-│  │                                    │      │  │
-│  └────────────────────────────────────┼──────┘  │
-└───────────────────────────────────────┼─────────┘
+┌──────────────────────────────────────────────────────┐
+│                  Linux VM / WSL                      │
+│  ┌────────────────────────────────────────────────┐  │
+│  │              Docker Compose Network            │  │
+│  │                                                │  │
+│  │  Node Exporter ──scrape──► Prometheus          │  │
+│  │  Grafana       ──scrape──►  │    │             │  │
+│  │  Alertmanager  ──scrape──►  │   fire           │  │
+│  │                          query   │             │  │
+│  │                             │    │             │  │
+│  │                          Grafana  Alertmanager │  │
+│  │                                    │           │  │
+│  │  Nginx ◄── proxies Prometheus API  │           │  │
+│  │  (status page :8080)               │           │  │
+│  └────────────────────────────────────┼───────────┘  │
+└───────────────────────────────────────┼──────────────┘
                                         │ webhook
                                    Slack channel
 ```
@@ -34,10 +34,12 @@ A production-grade observability stack built on a Linux VM (Azure/WSL) using Doc
 ## Features
 
 - Collects CPU, memory, disk, and network metrics every 15 seconds via Node Exporter
+- Scrapes Prometheus, Grafana, and Alertmanager health metrics for full stack visibility
 - Stores time-series data in Prometheus with 15-day retention
 - Grafana dashboard with 20+ panels (Node Exporter Full — dashboard ID 1860)
 - Alerting rules with severity labels (warning / critical)
 - Slack notifications via Alertmanager with resolved state tracking
+- Live uptime status page served by Nginx — proxies Prometheus API to avoid CORS, auto-refreshes every 30s
 - Slack webhook URL stored securely as a GitHub Secret — never hardcoded
 
 ---
@@ -50,6 +52,29 @@ A production-grade observability stack built on a Linux VM (Azure/WSL) using Doc
 | HighMemory | Memory > 85% | warning | 2m |
 | DiskSpaceLow | Disk > 90% | critical | 5m |
 | InstanceDown | Target unreachable | critical | 1m |
+
+---
+
+## Screenshots
+
+**Grafana — Node Exporter dashboard**
+
+<img width="1919" height="909" alt="image" src="https://github.com/user-attachments/assets/39fb651b-013a-4bbb-b56a-61365607894a" />
+
+
+**Prometheus — Alert firing**
+
+<img width="1919" height="909" alt="image" src="https://github.com/user-attachments/assets/78c690e7-f883-4ad5-9443-2bb56f57c20f" />
+
+
+**Slack — alert notification**
+
+<img width="538" height="240" alt="image" src="https://github.com/user-attachments/assets/7f5bc13b-1a61-4f02-9e39-440d55fdc98d" />
+
+
+**Status page — live uptime view**
+
+<img width="578" height="468" alt="image" src="https://github.com/user-attachments/assets/8a79661f-2801-4bb2-82a5-b24fbd6e809c" />
 
 ---
 
@@ -66,24 +91,21 @@ A production-grade observability stack built on a Linux VM (Azure/WSL) using Doc
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/linux-monitoring-stack
+git clone https://github.com/gmborromeo/linux-monitoring-stack
 cd linux-monitoring-stack
 ```
 
-### 2. Configure the Slack webhook
-
-The Slack webhook URL is **not stored in this repo**. It is injected at runtime via an environment variable.
-
-Copy the example env file and add your webhook URL:
+### 2. Configure environment variables
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and fill in your value:
+Open `.env` and fill in your values:
 
 ```env
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+GF_SECURITY_ADMIN_PASSWORD=YourStrongPassword123
 ```
 
 > `.env` is listed in `.gitignore` and will never be committed.
@@ -95,15 +117,16 @@ docker compose up -d
 docker compose ps
 ```
 
-All four containers should show `Up` status within 30 seconds.
+All five containers should show `Up` status within 30 seconds.
 
 ### 4. Access the services
 
 | Service | URL | Credentials |
 |---|---|---|
+| Status page | http://localhost:8080 | — |
 | Prometheus | http://localhost:9090 | — |
 | Alertmanager | http://localhost:9093 | — |
-| Grafana | http://localhost:3000 | admin / see `.env` |
+| Grafana | http://localhost:3000 | admin / YourStrongPassword123 |
 
 ### 5. Import the Grafana dashboard
 
@@ -114,9 +137,23 @@ All four containers should show `Up` status within 30 seconds.
 
 ---
 
+## Status Page
+
+The uptime status page is served by Nginx on port 8080. It proxies requests to the Prometheus `/api/v1/query?query=up` endpoint internally to avoid CORS issues, then displays a green/red status card for each monitored service.
+
+Prometheus scrapes all four services (Node Exporter, Grafana, Alertmanager, and itself) so every service has a live `up` metric — when a service goes down, its metric drops to 0 and the status page reflects it within 30 seconds.
+
+The page shows:
+- Per-service operational status (green = up, red = down)
+- Overall system health summary (all operational / degraded)
+- Last updated timestamp
+- Auto-refreshes every 30 seconds
+
+---
+
 ## GitHub Actions — CI/CD with Secrets
 
-This repo uses **GitHub Secrets** to inject the Slack webhook URL into the deployment pipeline so it is never stored in code or config files.
+This repo uses **GitHub Secrets** to inject the Slack webhook URL at deploy time so it is never stored in code or config files.
 
 ### How it works
 
@@ -127,48 +164,39 @@ global:
   slack_api_url: '${SLACK_WEBHOOK_URL}'
 ```
 
-A GitHub Actions workflow substitutes the secret at deploy time using `envsubst`:
+The GitHub Actions workflow substitutes the secret at deploy time using `envsubst`:
 
 ```yaml
 # .github/workflows/deploy.yml
-name: Deploy monitoring stack
+- name: Substitute secrets into alertmanager config
+  env:
+    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  run: |
+    envsubst < alertmanager/alertmanager.yml > alertmanager/alertmanager.resolved.yml
+    mv alertmanager/alertmanager.resolved.yml alertmanager/alertmanager.yml
 
-on:
-  push:
-    branches: [main]
+- name: Create .env from GitHub Secrets
+  run: |
+    echo "SLACK_WEBHOOK_URL=${{ secrets.SLACK_WEBHOOK_URL }}" >> .env
+    echo "GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}" >> .env
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Substitute secrets into alertmanager config
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          envsubst < alertmanager/alertmanager.yml > alertmanager/alertmanager.resolved.yml
-          mv alertmanager/alertmanager.resolved.yml alertmanager/alertmanager.yml
-
-      - name: Deploy stack
-        run: docker compose up -d
+- name: Deploy stack
+  run: docker compose up -d
 ```
 
-### Adding the secret to GitHub
+### Adding secrets to GitHub
 
 1. Go to your repository → **Settings** → **Secrets and variables** → **Actions**
-2. Click **New repository secret**
-3. Name: `SLACK_WEBHOOK_URL`
-4. Value: your full Slack webhook URL
-5. Click **Add secret**
+2. Click **New repository secret** and add both:
 
-The secret is encrypted at rest and never appears in logs or diffs.
+| Secret Name | Value |
+|---|---|
+| `SLACK_WEBHOOK_URL` | Your full Slack webhook URL |
+| `GF_SECURITY_ADMIN_PASSWORD` | YourStrongPassword123 |
 
 ---
 
 ## Running locally (WSL or Linux)
-
-For local development, the stack reads from a `.env` file instead of GitHub Secrets:
 
 ```bash
 cp .env.example .env
@@ -181,22 +209,29 @@ docker compose --env-file .env up -d
 ## Project Files
 
 ```
-monitoring-stack/
-├── docker-compose.yml           # All 4 services with resource limits
-├── .env.example                 # Template — copy to .env, never commit .env
+linux-monitoring-stack/
+├── docker-compose.yml                        # All 5 services, Prometheus lifecycle enabled
+├── .env.example                              # Template — copy to .env, never commit .env
 ├── .gitignore
 ├── prometheus/
-│   ├── prometheus.yml           # Scrape config and Alertmanager endpoint
-│   └── rules.yml                # Alert threshold rules
+│   ├── prometheus.yml                        # Scrapes all 4 services + alert rules
+│   └── rules.yml                             # Alert threshold rules
 ├── alertmanager/
-│   └── alertmanager.yml         # Routing, Slack config (uses ${SLACK_WEBHOOK_URL})
+│   └── alertmanager.yml                      # Routing, Slack config (uses ${SLACK_WEBHOOK_URL})
 ├── grafana/
 │   └── provisioning/
 │       └── datasources/
-│           └── prometheus.yml   # Auto-provisions Prometheus as default datasource
+│           └── prometheus.yml                # Auto-provisions Prometheus as default datasource
+├── status-page/
+│   └── index.html                            # Uptime status page (queries via Nginx proxy)
+├── docs/
+│   ├── grafana-dashboard.png                 # Screenshot
+│   ├── prometheus-alerts-firing.png          # Screenshot
+│   ├── slack-alert.png                       # Screenshot
+│   └── status-page.png                       # Screenshot
 └── .github/
     └── workflows/
-        └── deploy.yml           # CI/CD pipeline with secret injection
+        └── deploy.yml                        # CI/CD pipeline with secret injection
 ```
 
 ---
@@ -204,6 +239,9 @@ monitoring-stack/
 ## .env.example
 
 ```env
+# Copy this file to .env and fill in your own values
+# Never commit .env to git
+
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/REPLACE/WITH/YOUR_WEBHOOK
 GF_SECURITY_ADMIN_PASSWORD=YourStrongPassword123
 ```
@@ -219,13 +257,20 @@ alertmanager/alertmanager.resolved.yml
 
 ---
 
-## Screenshots
+## Testing the Status Page
 
-_Add screenshots here after setup:_
+Stop any service to verify the status page correctly reflects it as down:
 
-- `docs/grafana-dashboard.png` — Grafana Node Exporter dashboard with live metrics
-- `docs/prometheus-alerts-firing.png` — Prometheus alerts page showing HighCPU firing
-- `docs/slack-alert.png` — Slack notification with rendered alert description
+```bash
+# Stop a service
+docker compose stop grafana
+
+# Refresh http://localhost:8080 within 30s — Grafana should show red
+# Bring it back
+docker compose start grafana
+```
+
+Note: use `stop` not `down` — `down` removes the container, `stop` just pauses it.
 
 ---
 
@@ -240,6 +285,7 @@ stress --cpu 2 --timeout 180s &
 # Watch http://localhost:9090/alerts
 # INACTIVE → PENDING (0–2 min) → FIRING (after 2 min)
 # Slack notification should arrive within ~3 minutes
+# Status page at http://localhost:8080 will show degraded state
 
 killall stress
 ```
