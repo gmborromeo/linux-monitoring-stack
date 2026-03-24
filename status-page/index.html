@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Status</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                background: #f5f5f5; display: flex; justify-content: center;
+                padding: 40px 16px; min-height: 100vh; }
+        .card { background: #fff; border-radius: 12px; border: 1px solid #e5e5e5;
+                padding: 28px; width: 100%; max-width: 560px; height: fit-content; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .title { font-size: 20px; font-weight: 600; color: #111; }
+        .updated { font-size: 12px; color: #888; }
+        .subtitle { font-size: 13px; color: #888; margin-bottom: 22px; }
+        .services { display: flex; flex-direction: column; gap: 10px; }
+        .service { display: flex; justify-content: space-between; align-items: center;
+                    padding: 13px 16px; border-radius: 8px; }
+        .service.up { background: #f0fdf4; }
+        .service.down { background: #fef2f2;}
+        .service-name { font-size: 14px; font-weight: 500; }
+        .service-meta { font-size: 11px; margin-top: 2px; opacity: 0.75; }
+        .service.up     .service-name
+        .service.up     .service-meta { color: #166534; }
+        .service.down   .service-name
+        .service.down   .service-meta { color: #991b1b; }
+        .badge { display: flex; align-items: center; gap: 6px; }
+        .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .service.up     .dot { background: #16a34a; }
+        .service.down   .dot { background: #dc2626; }
+        .badge-text { font-size: 12px; font-weight: 500; }
+        .service.up     .badge-text { color: #166534; }
+        .service.down   .badge-text { color: #991b1b; }
+        .footer { margin-top: 18px; padding-top: 14px; border-top: 1px solid #f0f0f0;
+                    display: flex; justify-content: space-between; font-size: 11px; color: #aaa; }
+        .overall { font-size: 13px; font-weight: 500; }
+        .overall.all-up { color: #166534; }
+        .overall.some-down { color: #991b1b; }
+
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <div class="title">System Status</div>
+            <div class="updated" id="updated">Checking...</div>
+        </div>
+        <div class="subtitle" id="subtitle">linux-monitoring-stack</div>
+        <div class="services" id="services">
+            <div style="color: #888;font-size: 13px;padding: 12px 0;">Loading...</div>
+        </div>
+        <div class="footer">
+            <span>Auto-refreshes every 30s</span>
+            <span>Powered by Prometheus API</span>
+        </div>
+    </div>
+
+    <script>
+        const PROMETHEUS_URL = 'http://localhost:9090';
+
+        const SERVICES = [
+            { name: 'Prometheus',       job: 'prometheus',      port: '9090',   meta: 'scraping every 15s' },
+            { name: 'Grafana',          job: 'grafana',         port: '3000',   meta: 'dashboard active' },
+            { name: 'Alermanager',      job: 'alertmanager',    port: '9093',   meta: 'routing active' },
+            { name: 'Node Exporter',    job: 'node-exporter',   port: '9100',   meta: 'system metrics' },
+        ];
+
+        async function fetchStatus() {
+            const res = await fetch(`${PROMETHEUS_URL}/api/v1/query?query=up`);
+            const data = await res.json();
+            const results = data.data.result;
+            const statusMap = {};
+            results.forEach(r => {
+                statusMap[r.metric.job] = r.value[1] === '1';
+            });
+            return statusMap
+        }
+
+        async function render() {
+            let statusMap = {};
+            try {
+                statusMap = await fetchStatus();
+            }   catch (e) {
+                document.getElementById('updated').textContent = "Prometheus unreachable";
+            }
+
+            const container = document.getElementById('services');
+            container.innerHTML = '';
+
+            let allUp = true
+            SERVICES.forEach(svc => {
+                const up = statusMap[svc.job] !== false;
+                if (!up) allUp = false
+
+                const div = document.createElement('div');
+                div.className = `service ${up ? 'up' : 'down'}`;
+                div.innerHTML = `
+                    <div>
+                        <div class="service-name">${svc.name}</div>
+                        <div class="service-meta">${svc.port} · ${svc.meta}</div>
+                    </div>
+                    <div class="badge">
+                        <div class="dot"></div>
+                        <span class="badge-text">${up ? 'Operational' : 'Down'}</span>
+                    </div>`;
+                container.appendChild(div);
+            })
+
+            const sub = document.getElementById('subtitle');
+            sub.innerHTML = `linux-monitoring-stack · <span class="overall ${allUp ? 'all-up' : 'some-down'}">
+                ${allUp ? 'All systems operational' : 'Degraded - check alerts'}</span>`;
+
+            const now = new Date();
+            document.getElementById('updated').textContent =
+                `Updated ${now.toLocaleTimeString()}`;    
+        }
+
+        render();
+        setInterval(render, 30000);
+    </script>
+</body>
+</html>
